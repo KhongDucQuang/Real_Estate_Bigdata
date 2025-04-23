@@ -1,0 +1,29 @@
+# Môi trường ảo Python
+.venv/
+venv/
+env/
+
+# Byte-code và cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Cache và file cấu hình IDE
+.idea/
+.vscode/
+*.swp
+
+# File hệ điều hành
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# File trạng thái crawler (nếu không muốn đưa lên repo)
+# crawler_state/
+# *.json
+
+# Các file hoặc thư mục khác bạn không muốn đưa lên

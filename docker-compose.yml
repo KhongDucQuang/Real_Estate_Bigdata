@@ -1,0 +1,176 @@
+version: '3.8'
+
+networks:
+  realestate_network:
+    driver: bridge
+
+services:
+  # === HADOOP SERVICES (Lấy từ docker-hadoop/docker-compose.yml) ===
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8 # Hoặc image bạn đang dùng
+    container_name: namenode
+    hostname: namenode
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=test
+    env_file:
+      - ./docker-hadoop/hadoop.env # Đảm bảo đường dẫn đúng
+    ports:
+      - "9870:9870" # Giao diện Web UI NameNode
+      - "9000:9000" # Cổng RPC cho HDFS (có thể là 8020 tùy phiên bản)
+    networks:
+      - realestate_network
+    # restart: unless-stopped # Tùy chọn
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8 # Hoặc image bạn đang dùng
+    container_name: datanode
+    hostname: datanode
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    env_file:
+      - ./docker-hadoop/hadoop.env # Đảm bảo đường dẫn đúng
+    networks:
+      - realestate_network
+    depends_on:
+      - namenode
+    # restart: unless-stopped
+
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8 # Hoặc image bạn đang dùng
+    container_name: resourcemanager
+    hostname: resourcemanager
+    env_file:
+      - ./docker-hadoop/hadoop.env # Đảm bảo đường dẫn đúng
+    ports:
+      - "8088:8088" # Giao diện Web UI YARN
+    networks:
+      - realestate_network
+    depends_on:
+      - namenode
+      - datanode
+    # restart: unless-stopped
+
+  nodemanager1:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8 # Hoặc image bạn đang dùng
+    container_name: nodemanager1
+    hostname: nodemanager1
+    env_file:
+      - ./docker-hadoop/hadoop.env # Đảm bảo đường dẫn đúng
+    networks:
+      - realestate_network
+    depends_on:
+      - resourcemanager
+    # restart: unless-stopped
+
+  historyserver:
+     image: bde2020/hadoop-historyserver:2.0.0-hadoop3.2.1-java8 # Hoặc image bạn đang dùng
+     container_name: historyserver
+     hostname: historyserver
+     env_file:
+       - ./docker-hadoop/hadoop.env # Đảm bảo đường dẫn đúng
+     ports:
+       - "8188:8188" # Giao diện Web UI History Server
+     networks:
+       - realestate_network
+     depends_on:
+       - resourcemanager
+     # restart: unless-stopped
+
+  # === KAFKA SERVICES (Lấy từ kafka_cc/docker-compose.yml) ===
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    container_name: zookeeper
+    hostname: zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - realestate_network
+    # restart: unless-stopped
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    container_name: kafka
+    hostname: kafka
+    ports:
+      # Cổng 9092 map ra host để bạn có thể test bằng tool bên ngoài nếu muốn
+      - "9092:9092"
+    environment:
+      # Rất quan trọng: Cấu hình listeners cho giao tiếp nội bộ và bên ngoài (nếu cần)
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9093,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "real_estate_listings:1:1,alonhadat:1:1" # Ví dụ tạo sẵn topic
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false' # Nên đặt false và tạo topic rõ ràng
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - realestate_network
+    depends_on:
+      - zookeeper
+    # restart: unless-stopped
+
+  # === CLIENT SUBMIT (Lấy từ docker-hadoop/docker-compose.yml) ===
+  # Container này dùng để chạy lệnh hadoop jar, spark-submit,...
+  submit-client:
+      image: bde2020/hadoop-base:2.0.0-hadoop3.2.1-java8 # Hoặc image client/base phù hợp
+      container_name: submit_client
+      hostname: submit-client
+      env_file:
+        - ./docker-hadoop/hadoop.env
+      volumes:
+         - ./data:/data # Mount thư mục data vào container để chứa code/jar
+         - ./batch_jobs:/app/batch_jobs # Thư mục chứa code/jar MapReduce
+         - ./spark_jobs:/app/spark_jobs # Thư mục chứa code Spark
+      networks:
+        - realestate_network
+      depends_on:
+         - resourcemanager
+      stdin_open: true # Giữ cho container chạy để có thể exec vào
+      tty: true
+
+  # --- CÁC CONTAINER ỨNG DỤNG PYTHON SẼ ĐƯỢC THÊM VÀO ĐÂY ---
+  scheduler-crawler:
+    build:
+      context: .
+      dockerfile: scheduler/Dockerfile
+    container_name: scheduler_crawler_service
+    hostname: scheduler-crawler
+    networks:
+      - realestate_network
+    volumes:
+      # Bỏ comment nếu muốn mount code khi dev
+      # - ./scheduler:/app/scheduler
+      # - ./crawler:/app/crawler
+      # - ./kafka_cc:/app/kafka_cc
+      - ./crawler_state:/app/crawler_state # Mount thư mục state
+    environment:
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      - kafka
+    restart: unless-stopped # Đổi thành unless-stopped để tự khởi động lại
+
+  kafka-hdfs-consumer:
+    build:
+      context: .
+      dockerfile: kafka_cc/consumer/Dockerfile # Đường dẫn đúng
+    container_name: kafka_hdfs_consumer_service
+    hostname: kafka-hdfs-consumer
+    networks:
+      - realestate_network
+    depends_on:
+      kafka:
+        condition: service_started # Đợi kafka khởi động
+      namenode:
+        condition: service_started
+      datanode:
+        condition: service_started
+    restart: unless-stopped # Đổi thành unless-stopped
+
+volumes: # Định nghĩa volumes để lưu trữ dữ liệu HDFS
+  hadoop_namenode:
+  hadoop_datanode:
+  # ... các volume khác nếu cần ...

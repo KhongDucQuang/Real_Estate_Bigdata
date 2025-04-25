@@ -48,16 +48,21 @@ services:
     networks:
       - realestate_network
     depends_on:
-      - namenode
-      - datanode
+      namenode:
+        condition: service_healthy
+      datanode:
+        condition: service_started
     # restart: unless-stopped
 
   nodemanager1:
-    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8 # Hoặc image bạn đang dùng
+    # image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8 # <-- Xóa hoặc comment dòng này
+    build: # <-- Thêm phần build
+      context: ./docker-hadoop/nodemanager_python # <-- Đường dẫn đến thư mục chứa Dockerfile mới
+      dockerfile: Dockerfile
     container_name: nodemanager1
     hostname: nodemanager1
     env_file:
-      - ./docker-hadoop/hadoop.env # Đảm bảo đường dẫn đúng
+      - ./docker-hadoop/hadoop.env
     networks:
       - realestate_network
     depends_on:

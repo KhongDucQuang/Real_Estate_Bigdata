@@ -46,7 +46,7 @@ def save_last_page(last_page):
         json.dump(state, f, indent=4)
 
 # ========== CRAWLER CHÍNH ========== #
-def crawl_alonhadat(pages_per_run=20, new_pages=5):
+def crawl_alonhadat(pages_per_run=25, new_pages=5):
     user_agent_list = [
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.5615.49 Safari/537.36',
@@ -101,10 +101,26 @@ def crawl_alonhadat(pages_per_run=20, new_pages=5):
 
         for post in posts:
             try:
-                title = post.find_element(By.CLASS_NAME, "ct_title").text.strip()
-                address = post.find_element(By.CLASS_NAME, "ct_dis").text.strip()
+
                 raw_date = post.find_element(By.CLASS_NAME, "ct_date").text.strip()
                 post_date = parse_post_date(raw_date)
+
+                diachi_element = post.find_element(By.CLASS_NAME, "ct_dis")
+                diachi = diachi_element.text.strip()
+                lists = diachi.split(", ")
+
+                if "Đường" in lists[0]:
+                    lists[0] = lists[0].replace("Đường ", "")
+                if "Phố" in lists[0]:
+                    lists[0] = lists[0].replace("Phố ", "")
+                if "Phường" in lists[1]:
+                    lists[1] = lists[1].replace("Phường ", "")
+                if "Xã" in lists[1]:
+                    lists[1] = lists[1].replace("Xã ", "")
+                if "Quận" in lists[2]:
+                    lists[2] = lists[2].replace("Quận ", "")
+                if "Huyện" in lists[2]:
+                    lists[2] = lists[2].replace("Huyện ", "")
 
                 price = "Không rõ"
                 try:
@@ -128,18 +144,52 @@ def crawl_alonhadat(pages_per_run=20, new_pages=5):
                 except: pass
 
                 try:
-                    link = post.find_element(By.TAG_NAME, "a").get_attribute("href")
+                    kthuoc = post.find_element(By.CLASS_NAME, "ct_kt").text.strip().replace("Kích thước: ", "").replace(
+                        "m", "")
+                    kthuoc_list = kthuoc.split("x")
+                    cngang = kthuoc_list[0].replace(",", ".")
+                    cdai = kthuoc_list[1].replace(",", ".")
+                    if kthuoc == "---":
+                        cngang = None
+                        cdai = None
                 except:
-                    link = None
+                    cngang = None
+                    cdai = None
+                try:
+                    dorongduong = post.find_element(By.CLASS_NAME, "road-width").text.strip().replace("m", "")
+                except:
+                    dorongduong = None
 
+                try:
+                    sotang = post.find_element(By.CLASS_NAME, "floors").text.strip().replace(" lầu", "")
+                except:
+                    sotang = None
+
+                try:
+                    sophongngu = post.find_element(By.CLASS_NAME, "bedroom").text.strip().replace(" phòng ngủ", "")
+                except:
+                    sophongngu = None
+                try:
+                    post.find_element(By.CLASS_NAME, "parking")
+                    chodexe = "Có"
+                except:
+                    chodexe = None
                 data_list.append({
-                    "title": title,
-                    "price": price,
+                    "post_date": post_date,
+                    "duong_pho": lists[0],
+                    "phuong_xa": lists[1],
+                    "quan_huyen": lists[2],
+                    "thanh_pho": lists[3],
+                    "loai_bds": "Nhà đất",
                     "area": area,
-                    "address": address,
-                    "link": link,
+                    "chieu_ngang": cngang,
+                    "chieu_dai": cdai,
+                    "duong_truoc_nha": dorongduong,
+                    "so_tang": sotang,
+                    "so_phong_ngu": sophongngu,
+                    "cho_de_xe": chodexe,
+                    "price": price,
                     "source": "alonhadat",
-                    "post_date": post_date
                 })
             except:
                 continue

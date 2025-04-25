@@ -69,7 +69,7 @@ signal.signal(signal.SIGINT, handle_shutdown_signal)  # Ctrl+C
 signal.signal(signal.SIGTERM, handle_shutdown_signal) # Tín hiệu dừng từ Docker
 
 # --- Lên lịch và chạy ---
-crawl_interval_minutes = 30 # Đặt khoảng thời gian crawl
+crawl_interval_minutes = 15 # Đặt khoảng thời gian crawl
 log.info(f"Scheduler bắt đầu. Sẽ chạy crawl mỗi {crawl_interval_minutes} phút.")
 schedule.every(crawl_interval_minutes).minutes.do(crawl_all_sources)
 

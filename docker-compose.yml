@@ -1,9 +1,5 @@
 version: '3.8'
 
-networks:
-  realestate_network:
-    driver: bridge
-
 services:
   # === HADOOP SERVICES (Lấy từ docker-hadoop/docker-compose.yml) ===
   namenode:
@@ -110,6 +106,7 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_CREATE_TOPICS: "real_estate_listings:1:1,alonhadat:1:1" # Ví dụ tạo sẵn topic
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false' # Nên đặt false và tạo topic rõ ràng
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -118,24 +115,6 @@ services:
       - zookeeper
     # restart: unless-stopped
 
-  # === CLIENT SUBMIT (Lấy từ docker-hadoop/docker-compose.yml) ===
-  # Container này dùng để chạy lệnh hadoop jar, spark-submit,...
-  submit-client:
-      image: bde2020/hadoop-base:2.0.0-hadoop3.2.1-java8 # Hoặc image client/base phù hợp
-      container_name: submit_client
-      hostname: submit-client
-      env_file:
-        - ./docker-hadoop/hadoop.env
-      volumes:
-         - ./data:/data # Mount thư mục data vào container để chứa code/jar
-         - ./batch_jobs:/app/batch_jobs # Thư mục chứa code/jar MapReduce
-         - ./spark_jobs:/app/spark_jobs # Thư mục chứa code Spark
-      networks:
-        - realestate_network
-      depends_on:
-         - resourcemanager
-      stdin_open: true # Giữ cho container chạy để có thể exec vào
-      tty: true
 
   # --- CÁC CONTAINER ỨNG DỤNG PYTHON SẼ ĐƯỢC THÊM VÀO ĐÂY ---
   scheduler-crawler:
@@ -174,8 +153,46 @@ services:
       datanode:
         condition: service_started
     restart: unless-stopped # Đổi thành unless-stopped
+  spark-client:
+    # Build từ Dockerfile chúng ta đã tạo dựa trên big-data-europe/base
+    build:
+      context: ./spark_client_bdeu # <-- Trỏ đến thư mục chứa Dockerfile mới
+      dockerfile: Dockerfile
+    container_name: spark_client_bdeu # <-- Đặt tên container mới
+    hostname: spark-client-bdeu
+    environment:
+      # Trỏ đến thư mục chứa config Hadoop sẽ được mount vào
+      - HADOOP_CONF_DIR=/etc/hadoop/conf
+      # Đặt biến môi trường Python cho Spark (dùng python3 trong image Alpine/Python3.7)
+      - PYSPARK_PYTHON=/usr/bin/python3
+      - PYSPARK_DRIVER_PYTHON=/usr/bin/python3
+      # Thêm các biến môi trường khác nếu image base cần (tham khảo image gốc)
+    volumes:
+      # Mount thư mục config Hadoop vừa tạo ở máy host vào container (read-only)
+      - ./hadoop_conf:/etc/hadoop/conf:ro
+      # Mount thư mục chứa code Spark jobs của bạn
+      - ./spark_jobs:/app/spark_jobs
+      # Mount các thư mục khác nếu cần
+    networks:
+      - realestate_network # <-- Đảm bảo đúng tên mạng
+    depends_on: # Đợi các thành phần Hadoop cơ bản khởi động
+      - namenode
+      - resourcemanager
+    stdin_open: true # <-- Giữ container chạy để có thể exec/run bash
+    tty: true         # <-- Giữ container chạy
+    # Thêm command để giữ container chạy nếu cần (thường không cần khi có tty+stdin)
+    # command: ["tail", "-f", "/dev/null"]
 
-volumes: # Định nghĩa volumes để lưu trữ dữ liệu HDFS
-  hadoop_namenode:
+volumes:
+  # ... giữ nguyên các volume cũ ...
+  hadoop_namenode: # Đảm bảo các volume cần thiết vẫn được định nghĩa
   hadoop_datanode:
-  # ... các volume khác nếu cần ...
+  hadoop_historyserver:
+  zookeeper_data:
+  kafka_data:
+  crawler_state:
+
+networks:
+  realestate_network:
+    driver: bridge
+    name: realestate_network # Đảm bảo tên mạng được định nghĩa
